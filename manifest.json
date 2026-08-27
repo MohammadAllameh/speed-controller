@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "Video Speed Controller | کنترل سرعت ویدیو",
+  "version": "1.0.0",
+  "description": "کنترل دقیق و سریع سرعت پخش ویدیو از 0.1x تا 16x با اسلایدر، میانبرهای کیبورد و دکمه‌های سریع برای تمامی سایت‌ها.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "Video Speed Controller"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "all_frames": true,
+      "match_about_blank": true,
+      "js": [
+        "scripts/content.js"
+      ],
+      "css": [
+        "scripts/content.css"
+      ],
+      "run_at": "document_start"
+    }
+  ]
+}

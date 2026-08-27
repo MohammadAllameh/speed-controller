@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>کنترل سرعت ویدیو</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="logo-icon">⚡</div>
+        <div class="brand-text">
+          <h1 class="title">کنترل سرعت ویدیو</h1>
+          <span class="subtitle">از 0.1x تا 16.0x</span>
+        </div>
+      </div>
+      <button id="btn-reset-header" class="btn-icon" title="بازنشانی به 1.0x" aria-label="بازنشانی سرعت">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+          <path d="M3 3v5h5"/>
+        </svg>
+      </button>
+    </header>
+
+    <!-- Main Speed Display Card -->
+    <div class="speed-card">
+      <div class="speed-display-wrapper">
+        <button id="btn-fine-dec" class="circle-btn" title="کاهش 0.1x" aria-label="کاهش سرعت">-</button>
+        <div class="speed-display" id="speed-display-container">
+          <span id="speed-value" class="speed-number">1.00</span>
+          <span class="speed-unit">x</span>
+        </div>
+        <button id="btn-fine-inc" class="circle-btn" title="افزایش 0.1x" aria-label="افزایش سرعت">+</button>
+      </div>
+
+      <!-- Slider Container -->
+      <div class="slider-container">
+        <div class="slider-labels">
+          <span>0.1x</span>
+          <span class="slider-mid">1.0x</span>
+          <span>16.0x</span>
+        </div>
+        <input 
+          type="range" 
+          id="speed-slider" 
+          min="0.1" 
+          max="16.0" 
+          step="0.05" 
+          value="1.0"
+          aria-label="اسلایدر سرعت ویدیو"
+        >
+      </div>
+
+      <!-- Numeric Input & Fine-Tuning Step Row -->
+      <div class="fine-tune-row">
+        <button class="step-btn" data-step="-0.5">-0.5</button>
+        <button class="step-btn" data-step="-0.1">-0.1</button>
+        
+        <div class="direct-input-box">
+          <input type="number" id="direct-speed-input" min="0.1" max="16.0" step="0.1" value="1.0" title="سرعت دلخواه را دستی وارد کنید">
+          <span>x</span>
+        </div>
+
+        <button class="step-btn" data-step="+0.1">+0.1</button>
+        <button class="step-btn" data-step="+0.5">+0.5</button>
+      </div>
+    </div>
+
+    <!-- Quick Presets -->
+    <div class="section-title">
+      <span>سرعت‌های سریع</span>
+    </div>
+    <div class="presets-grid">
+      <button class="preset-btn" data-speed="0.25">0.25x</button>
+      <button class="preset-btn" data-speed="0.5">0.5x</button>
+      <button class="preset-btn" data-speed="0.75">0.75x</button>
+      <button class="preset-btn active" data-speed="1.0">1.0x</button>
+      <button class="preset-btn" data-speed="1.25">1.25x</button>
+      <button class="preset-btn" data-speed="1.5">1.5x</button>
+      <button class="preset-btn" data-speed="1.75">1.75x</button>
+      <button class="preset-btn" data-speed="2.0">2.0x</button>
+      <button class="preset-btn" data-speed="2.5">2.5x</button>
+      <button class="preset-btn" data-speed="3.0">3.0x</button>
+      <button class="preset-btn" data-speed="4.0">4.0x</button>
+      <button class="preset-btn" data-speed="8.0">8.0x</button>
+      <button class="preset-btn" data-speed="12.0">12x</button>
+      <button class="preset-btn" data-speed="16.0">16x 🚀</button>
+    </div>
+
+    <!-- Video Detection Status -->
+    <div class="status-bar">
+      <span class="status-dot active" id="status-dot"></span>
+      <span id="status-text">در حال بررسی ویدیوها...</span>
+    </div>
+
+    <!-- Settings Toggle Accordion -->
+    <details class="settings-accordion">
+      <summary class="accordion-header">
+        <span>⚙️ تنظیمات و کلیدهای میانبر</span>
+      </summary>
+      <div class="accordion-body">
+        <label class="toggle-option">
+          <input type="checkbox" id="toggle-remember-speed" checked>
+          <span class="toggle-slider"></span>
+          <span class="toggle-label">ذخیره سرعت برای دفعات بعد</span>
+        </label>
+
+        <label class="toggle-option">
+          <input type="checkbox" id="toggle-osd" checked>
+          <span class="toggle-slider"></span>
+          <span class="toggle-label">نمایش نشانگر شناور روی ویدیو (OSD)</span>
+        </label>
+
+        <label class="toggle-option">
+          <input type="checkbox" id="toggle-shortcuts" checked>
+          <span class="toggle-slider"></span>
+          <span class="toggle-label">فعال‌بودن کلیدهای میانبر کیبورد</span>
+        </label>
+
+        <!-- Shortcuts Table -->
+        <div class="shortcuts-cheat-sheet">
+          <div class="shortcut-row">
+            <span class="shortcut-desc">کاهش سرعت (0.1-)</span>
+            <kbd class="shortcut-key">[</kbd>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-desc">افزایش سرعت (0.1+)</span>
+            <kbd class="shortcut-key">]</kbd>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-desc">بازنشانی به 1.0x</span>
+            <kbd class="shortcut-key">\</kbd> یا <kbd class="shortcut-key">R</kbd>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-desc">گام بزرگ‌تر (0.5±)</span>
+            <kbd class="shortcut-key">Shift + [ / ]</kbd>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-desc">عقب / جلو ۵ ثانیه</span>
+            <kbd class="shortcut-key">Z / X</kbd>
+          </div>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

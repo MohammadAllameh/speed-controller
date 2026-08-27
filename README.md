@@ -17,7 +17,7 @@
 4. روی دکمه **Load unpacked (بارگیری بسته باز نشده)** کلیک کنید.
 5. در پنجره باز شده، پوشه زیر را انتخاب کنید:
    ```text
-   c:\Mohammad\mohammad\developer\extensions-chrome\Speed-Controller
+   c:\Speed-Controller
    ```
 6. تمام شد! افزونه به لیست افزونه‌های شما اضافه شد. برای دسترسی سریع، روی آیکون پازل (Extensions) در نوار بالای Edge کلیک کرده و علامت سنجاق (Pin) را در کنار **Video Speed Controller** بزنید تا آیکون افزونه همیشه در دسترس باشد.
 
