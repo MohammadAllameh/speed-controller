@@ -9,7 +9,6 @@
 
   // Prevent multiple executions in the same frame
   if (window.__VIDEO_SPEED_CONTROLLER_ACTIVE__) {
-    // Re-trigger speed application if already injected
     if (typeof window.__vsc_applyCurrentSpeed === 'function') {
       window.__vsc_applyCurrentSpeed();
     }
@@ -20,6 +19,7 @@
   const DEFAULT_SETTINGS = {
     rememberSpeed: true,
     savedSpeed: 1.0,
+    globalPlaybackSpeed: 1.0,
     showOSD: true,
     enableShortcuts: true,
     stepDelta: 0.1,
@@ -153,7 +153,7 @@
   /**
    * Apply current speed to all detected media elements
    */
-  function applySpeedToAll(speed, triggerOSD = false) {
+  function applySpeedToAll(speed, triggerOSD = false, saveToStorage = false) {
     currentSpeed = clampSpeed(speed);
 
     // 1. Clean dead media from set
@@ -178,13 +178,16 @@
       showOSDBadge(currentSpeed);
     }
 
-    // 3. Save speed if enabled
-    if (settings.rememberSpeed && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.set({ savedSpeed: currentSpeed }).catch(() => {});
+    // 3. Save speed globally across all tabs and websites if requested
+    if (saveToStorage && settings.rememberSpeed && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.set({
+        globalPlaybackSpeed: currentSpeed,
+        savedSpeed: currentSpeed
+      }).catch(() => {});
     }
   }
 
-  window.__vsc_applyCurrentSpeed = () => applySpeedToAll(currentSpeed, false);
+  window.__vsc_applyCurrentSpeed = () => applySpeedToAll(currentSpeed, false, false);
 
   /**
    * Register and listen to events on a media element
@@ -197,7 +200,7 @@
 
     const onRateChange = () => {
       if (!isApplyingRate && Math.abs(media.playbackRate - currentSpeed) > 0.01) {
-        // Enforce target speed if player tries to reset it
+        // Enforce global target speed if player tries to reset it
         applySpeedToMedia(media, currentSpeed);
       }
     };
@@ -215,8 +218,7 @@
   }
 
   /**
-   * Global Capture Event Listeners:
-   * Catches media events on ANY element as soon as it is created or manipulated by frameworks (React/Instagram/YouTube)
+   * Global Capture Event Listeners
    */
   function setupGlobalCaptureListeners() {
     const events = ['play', 'playing', 'ratechange', 'loadeddata', 'canplay'];
@@ -230,7 +232,7 @@
             applySpeedToMedia(target, currentSpeed);
           }
         },
-        true // Capture phase!
+        true // Capture phase
       );
     });
   }
@@ -319,15 +321,15 @@
         if (key === ']' || key === '}') {
           event.preventDefault();
           event.stopPropagation();
-          applySpeedToAll(currentSpeed + delta, true);
+          applySpeedToAll(currentSpeed + delta, true, true);
         } else if (key === '[' || key === '{') {
           event.preventDefault();
           event.stopPropagation();
-          applySpeedToAll(currentSpeed - delta, true);
+          applySpeedToAll(currentSpeed - delta, true, true);
         } else if (key === '\\' || key === 'r' || key === 'R') {
           event.preventDefault();
           event.stopPropagation();
-          applySpeedToAll(1.0, true);
+          applySpeedToAll(1.0, true, true);
         } else if (key === 'z' || key === 'Z') {
           activeMediaElements.forEach((v) => {
             try {
@@ -344,6 +346,37 @@
       },
       true
     );
+  }
+
+  /**
+   * Listen to global storage changes across ALL tabs and windows
+   */
+  function setupStorageListener() {
+    if (!chrome.storage || !chrome.storage.onChanged) return;
+
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== 'local') return;
+
+      if (changes.globalPlaybackSpeed || changes.savedSpeed) {
+        const rawNew = changes.globalPlaybackSpeed ? changes.globalPlaybackSpeed.newValue : changes.savedSpeed.newValue;
+        if (typeof rawNew === 'number' || typeof rawNew === 'string') {
+          const newSpeed = clampSpeed(rawNew);
+          if (Math.abs(currentSpeed - newSpeed) > 0.001) {
+            applySpeedToAll(newSpeed, false, false);
+          }
+        }
+      }
+
+      if (changes.rememberSpeed !== undefined) {
+        settings.rememberSpeed = !!changes.rememberSpeed.newValue;
+      }
+      if (changes.showOSD !== undefined) {
+        settings.showOSD = !!changes.showOSD.newValue;
+      }
+      if (changes.enableShortcuts !== undefined) {
+        settings.enableShortcuts = !!changes.enableShortcuts.newValue;
+      }
+    });
   }
 
   /**
@@ -370,7 +403,8 @@
         case 'SET_SPEED': {
           const newSpeed = parseFloat(message.speed);
           if (!isNaN(newSpeed)) {
-            applySpeedToAll(newSpeed, true);
+            // apply locally without saving back to avoid circular write
+            applySpeedToAll(newSpeed, true, false);
             sendResponse({ success: true, speed: currentSpeed, videoCount: activeMediaElements.size });
           }
           break;
@@ -378,13 +412,13 @@
 
         case 'STEP_SPEED': {
           const delta = parseFloat(message.delta) || 0.1;
-          applySpeedToAll(currentSpeed + delta, true);
+          applySpeedToAll(currentSpeed + delta, true, true);
           sendResponse({ success: true, speed: currentSpeed, videoCount: activeMediaElements.size });
           break;
         }
 
         case 'RESET_SPEED': {
-          applySpeedToAll(1.0, true);
+          applySpeedToAll(1.0, true, true);
           sendResponse({ success: true, speed: 1.0, videoCount: activeMediaElements.size });
           break;
         }
@@ -402,35 +436,44 @@
   }
 
   /**
-   * Initialize content script
+   * Initialize content script with global persistent speed
    */
   function initialize() {
     if (chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(DEFAULT_SETTINGS, (items) => {
-        if (!chrome.runtime.lastError && items) {
-          settings = { ...DEFAULT_SETTINGS, ...items };
-          if (settings.rememberSpeed && typeof settings.savedSpeed === 'number') {
-            currentSpeed = clampSpeed(settings.savedSpeed);
+      chrome.storage.local.get(
+        ['globalPlaybackSpeed', 'savedSpeed', 'rememberSpeed', 'showOSD', 'enableShortcuts', 'stepDelta', 'largeStepDelta'],
+        (items) => {
+          if (!chrome.runtime.lastError && items) {
+            settings = {
+              ...DEFAULT_SETTINGS,
+              ...items
+            };
+
+            const storedSpeed = items.globalPlaybackSpeed !== undefined ? items.globalPlaybackSpeed : items.savedSpeed;
+            if (settings.rememberSpeed && storedSpeed !== undefined) {
+              currentSpeed = clampSpeed(storedSpeed);
+            }
           }
+          applySpeedToAll(currentSpeed, false, false);
         }
-        applySpeedToAll(currentSpeed, false);
-      });
+      );
     } else {
-      applySpeedToAll(currentSpeed, false);
+      applySpeedToAll(currentSpeed, false, false);
     }
 
     setupGlobalCaptureListeners();
     setupObserver();
     setupPeriodicScanner();
     setupKeyboardShortcuts();
+    setupStorageListener();
     setupMessageListener();
 
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => {
-        applySpeedToAll(currentSpeed, false);
+        applySpeedToAll(currentSpeed, false, false);
       });
     } else {
-      applySpeedToAll(currentSpeed, false);
+      applySpeedToAll(currentSpeed, false, false);
     }
   }
 

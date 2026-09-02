@@ -1,7 +1,7 @@
 /**
  * Video Speed Controller - Popup Script
- * Features automatic script injection for existing tabs,
- * instant speed synchronization, and real-time status.
+ * Features Global Persistent Speed across all websites and tabs,
+ * automatic script injection, and real-time synchronization.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -117,12 +117,35 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /**
-   * Send speed command to active tab with auto-injection fallback
+   * Set Global Speed across ALL tabs, ALL websites, and persist FOREVER
    */
-  function sendSpeedToTab(val) {
+  function setGlobalSpeed(val) {
     renderSpeed(val);
 
+    // 1. Permanently save to storage as master global speed
+    if (chrome.storage && chrome.storage.local) {
+      chrome.storage.local.set({
+        globalPlaybackSpeed: currentSpeed,
+        savedSpeed: currentSpeed
+      }).catch(() => {});
+    }
+
+    // 2. Broadcast to ALL tabs in all windows
     if (chrome.tabs && chrome.tabs.query) {
+      chrome.tabs.query({}, (tabs) => {
+        if (tabs) {
+          tabs.forEach((tab) => {
+            if (isInjectableUrl(tab.url)) {
+              chrome.tabs.sendMessage(
+                tab.id,
+                { type: 'SET_SPEED', speed: currentSpeed }
+              ).catch(() => {});
+            }
+          });
+        }
+      });
+
+      // 3. For the current active tab, handle fallback auto-injection & status
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (!tabs || tabs.length === 0) return;
         const activeTab = tabs[0];
@@ -139,7 +162,6 @@ document.addEventListener('DOMContentLoaded', () => {
           { type: 'SET_SPEED', speed: currentSpeed },
           (response) => {
             if (chrome.runtime.lastError) {
-              // Attempt dynamic injection then retry
               ensureContentScript(tabId, (success) => {
                 if (success) {
                   setTimeout(() => {
@@ -151,7 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
                           updateStatus(retryRes.videoCount);
                         } else {
                           statusDot.classList.add('active');
-                          statusText.textContent = 'سرعت با موفقیت تنظیم شد';
+                          statusText.textContent = 'سرعت سراسری با موفقیت تنظیم شد';
                         }
                       }
                     );
@@ -168,11 +190,6 @@ document.addEventListener('DOMContentLoaded', () => {
         );
       });
     }
-
-    // Save to storage
-    if (toggleRememberSpeed && toggleRememberSpeed.checked && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.set({ savedSpeed: currentSpeed }).catch(() => {});
-    }
   }
 
   /**
@@ -181,9 +198,9 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateStatus(videoCount) {
     statusDot.classList.add('active');
     if (typeof videoCount === 'number' && videoCount > 0) {
-      statusText.textContent = `${videoCount} ویدیو در حال کنترل است`;
+      statusText.textContent = `${videoCount} ویدیو در حال کنترل با سرعت سراسری`;
     } else {
-      statusText.textContent = 'متصل (آماده به محض پخش ویدیو)';
+      statusText.textContent = 'متصل (سرعت سراسری روی همه ویدیوها فعال است)';
     }
   }
 
@@ -202,27 +219,32 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (chrome.tabs && chrome.tabs.query) {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs && tabs.length > 0) {
-          chrome.tabs.sendMessage(
-            tabs[0].id,
-            { type: 'UPDATE_SETTINGS', settings: newSettings }
-          ).catch(() => {});
+      chrome.tabs.query({}, (tabs) => {
+        if (tabs) {
+          tabs.forEach((tab) => {
+            if (isInjectableUrl(tab.url)) {
+              chrome.tabs.sendMessage(
+                tab.id,
+                { type: 'UPDATE_SETTINGS', settings: newSettings }
+              ).catch(() => {});
+            }
+          });
         }
       });
     }
   }
 
   /**
-   * Initialize popup and connect with active tab
+   * Initialize popup: Master speed from storage, query tab for status
    */
   function loadInitialState() {
-    // 1. Load settings & stored speed
+    // 1. Master Source of Truth: chrome.storage.local
     if (chrome.storage && chrome.storage.local) {
       chrome.storage.local.get(
         {
-          rememberSpeed: true,
+          globalPlaybackSpeed: 1.0,
           savedSpeed: 1.0,
+          rememberSpeed: true,
           showOSD: true,
           enableShortcuts: true
         },
@@ -232,15 +254,16 @@ document.addEventListener('DOMContentLoaded', () => {
             toggleOSD.checked = !!items.showOSD;
             toggleShortcuts.checked = !!items.enableShortcuts;
 
-            if (items.rememberSpeed && typeof items.savedSpeed === 'number') {
-              renderSpeed(items.savedSpeed);
+            const masterSpeed = items.globalPlaybackSpeed !== undefined ? items.globalPlaybackSpeed : items.savedSpeed;
+            if (typeof masterSpeed === 'number') {
+              renderSpeed(masterSpeed);
             }
           }
         }
       );
     }
 
-    // 2. Query active tab
+    // 2. Query active tab ONLY for video count and connectivity (DO NOT overwrite master speed)
     if (chrome.tabs && chrome.tabs.query) {
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (!tabs || tabs.length === 0) return;
@@ -253,19 +276,18 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
 
-        // Try getting speed from content script
         chrome.tabs.sendMessage(tabId, { type: 'GET_SPEED' }, (res) => {
           if (chrome.runtime.lastError) {
-            // Auto inject and retry
             ensureContentScript(tabId, (success) => {
               if (success) {
                 setTimeout(() => {
                   chrome.tabs.sendMessage(tabId, { type: 'GET_SPEED' }, (retryRes) => {
                     if (!chrome.runtime.lastError && retryRes) {
-                      if (typeof retryRes.speed === 'number') {
-                        renderSpeed(retryRes.speed);
-                      }
                       updateStatus(retryRes.videoCount);
+                      // Enforce master speed on tab if different
+                      if (Math.abs(retryRes.speed - currentSpeed) > 0.01) {
+                        chrome.tabs.sendMessage(tabId, { type: 'SET_SPEED', speed: currentSpeed }).catch(() => {});
+                      }
                     } else {
                       updateStatus(0);
                     }
@@ -273,18 +295,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 }, 60);
               } else {
                 statusDot.classList.remove('active');
-                statusText.textContent = 'برای فعال‌سازی صفحه را رفرش (F5) کنید';
+                statusText.textContent = 'صفحه را رفرش (F5) کنید';
               }
             });
           } else if (res) {
-            if (typeof res.speed === 'number') {
-              renderSpeed(res.speed);
-            }
             updateStatus(res.videoCount);
-            if (res.settings) {
-              toggleRememberSpeed.checked = !!res.settings.rememberSpeed;
-              toggleOSD.checked = !!res.settings.showOSD;
-              toggleShortcuts.checked = !!res.settings.enableShortcuts;
+            // If tab has different speed, sync tab to master global speed
+            if (typeof res.speed === 'number' && Math.abs(res.speed - currentSpeed) > 0.01) {
+              chrome.tabs.sendMessage(tabId, { type: 'SET_SPEED', speed: currentSpeed }).catch(() => {});
             }
           }
         });
@@ -292,38 +310,57 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  /**
+   * Listen to storage changes in real time (e.g. from hotkeys in tabs)
+   */
+  if (chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== 'local') return;
+
+      if (changes.globalPlaybackSpeed || changes.savedSpeed) {
+        const rawNew = changes.globalPlaybackSpeed ? changes.globalPlaybackSpeed.newValue : changes.savedSpeed.newValue;
+        if (typeof rawNew === 'number' || typeof rawNew === 'string') {
+          const newSpeed = clamp(rawNew);
+          if (Math.abs(currentSpeed - newSpeed) > 0.001) {
+            renderSpeed(newSpeed);
+          }
+        }
+      }
+    });
+  }
+
   // --- Event Listeners ---
 
   speedSlider.addEventListener('input', (e) => {
-    sendSpeedToTab(parseFloat(e.target.value));
+    setGlobalSpeed(parseFloat(e.target.value));
   });
 
   directSpeedInput.addEventListener('change', (e) => {
-    sendSpeedToTab(parseFloat(e.target.value));
+    setGlobalSpeed(parseFloat(e.target.value));
   });
   directSpeedInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
-      sendSpeedToTab(parseFloat(e.target.value));
+      setGlobalSpeed(parseFloat(e.target.value));
       directSpeedInput.blur();
     }
   });
 
   btnFineDec.addEventListener('click', () => {
-    sendSpeedToTab(currentSpeed - 0.1);
+    setGlobalSpeed(currentSpeed - 0.1);
   });
   btnFineInc.addEventListener('click', () => {
-    sendSpeedToTab(currentSpeed + 0.1);
+    setGlobalSpeed(currentSpeed + 0.1);
   });
 
   btnResetHeader.addEventListener('click', () => {
-    sendSpeedToTab(1.0);
+    setGlobalSpeed(1.0);
   });
 
   stepButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       const step = parseFloat(btn.dataset.step);
       if (!isNaN(step)) {
-        sendSpeedToTab(currentSpeed + step);
+        setGlobalSpeed(currentSpeed + step);
       }
     });
   });
@@ -332,7 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', () => {
       const speed = parseFloat(btn.dataset.speed);
       if (!isNaN(speed)) {
-        sendSpeedToTab(speed);
+        setGlobalSpeed(speed);
       }
     });
   });
